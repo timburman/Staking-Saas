@@ -19,15 +19,78 @@ interface IStakingContract {
      * @param pendingRewards Accumulated but unclaimed rewards (for ASR)
      */
     struct BaseStakeInfo {
-        uint amount;
-        uint startTime;
-        uint lastClaimTime;
-        uint totalRewardsCalimed;
+        uint256 amount;
+        uint256 startTime;
+        uint256 lastClaimTime;
+        uint256 totalRewardsCalimed;
         uint256 unlockTime;
         uint256 lastRewardCalculation;
         uint256 userRewardPerTokenPaid;
         uint256 pendingRewards;
     }
 
+    /**
+     * @notice Emitted when a user stakes tokens
+     * @param user Address of the staker
+     * @param amount Amount of tokens staked
+     */
+    event Staked(address indexed user, uint256 amount);
+
+    /**
+     * @notice Emitted when a user unstakes tokens
+     * @param user Address of the staker
+     * @param amount Amount of tokens unstaked
+     */
+    event Unstaked(address indexed user, uint256 amount);
+
+    /**
+     * @notice Emitted when a user claims rewards
+     * @param user Address of the staker
+     * @param reward Amount of rewards claimed
+     */
+    event RewardClaimed(address indexed user, uint256 reward);
+
+    /**
+     * @notice Stake tokens into the contract
+     * @param amount Amount of tokens to stake
+     */
+    function stake(uint256 amount) external;
+
+    /**
+     * @notice Unstake staked tokens from the contract
+     * @param amount Amount of tokens to unstake
+     */
+    function unstake(uint amount) external;
+
+    /**
+     * @notice Claim accumulated rewards
+     */
+    function claimReward() external;
+
+    /**
+     * @notice Get stake information for a specific address
+     * @param user Address of the user
+     * @return Stake Information
+     */
+    function getStakeInfo(address user) external view returns(BaseStakeInfo);
+
+    /**
+     * @notice Calculate pending rewards for a staker
+     * @param staker Address of the staker
+     * @return Pending reward amount
+     */
+    function calculateReward(address staker) external view returns (uint256);
+
+    /**
+     * @notice Get total amount staked in the contract
+     * @return Total staked amount
+     */
+    function totalStaked() external view returns (uint256);
+
+    /**
+     * @notice Get the staking token address
+     * @return Address of the staking token
+     */
+    function stakingToken() external view returns (address);
 
 }
