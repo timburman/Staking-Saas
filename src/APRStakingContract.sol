@@ -23,7 +23,7 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
 
     // -- Reward Variables --
     uint256 public rewardRate;
-    uint256 public rewardDuration = 30 days;
+    uint256 public rewardDuration;
     uint256 public lastUpdateTime;
     uint256 public periodFinish;
     uint256 public maxAprInBps;
@@ -34,7 +34,7 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
     mapping(address => uint256) public rewards;
 
     // -- Staking Balances --
-    uint256 private _totalSupply;
+    uint256 private _totalStaked;
     mapping(address => uint256) public stakedBalance;
 
     // -- Unstaking Time-lock Variables --
@@ -43,10 +43,10 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
         uint256 unlockTime;
     }
 
-    mapping(address => UnstakeInfo) public unstakingRequests;
+    mapping(address => UnstakeInfo) public unstakingRequest;
     uint256 public unstakePeriod;
 
-    struct APRStakeInfo {
+    struct AprStakeInfo {
         uint256 stakedAmount;
         uint256 earnedRewards;
         uint256 rewardPerTokenPaid;
@@ -57,7 +57,6 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
     // -- Events --
     event UnstakeInitiated(address indexed user, uint256 amount, uint256 unlockTime);
     event Withdrawn(address indexed user, uint256 amount);
-    event RewardClaimed(address indexed user, uint256 amount);
     event RewardRateUpdated(uint256 newRewardRate);
     event RewardDurationUpdated(uint256 newDuration);
     event MaxAprUpdated(uint256 newMaxAprInBps);
@@ -88,7 +87,7 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
      */
     function initialize(
         address stakingToken_,
-        uint256 initialMaxAPRInBps_,
+        uint256 initialMaxAprInBps_,
         uint256 initialUnstakePeriod_,
         uint256 initialRewardDuration_,
         address initialOwner
@@ -102,42 +101,79 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
         __Ownable_init(initialOwner);
 
         _stakingToken = IERC20(stakingToken_);
-        maxAprInBps = initialMaxAPRInBps_;
+        maxAprInBps = initialMaxAprInBps_;
         unstakePeriod = initialUnstakePeriod_;
         rewardDuration = initialRewardDuration_;
     }
 
     // -- Views --
 
-    function totalSupply() external view returns (uint256) {
-        return _totalSupply;
+    /**
+     * @notice Get total amount staked in the contract
+     * @return Total staked amount
+     */
+    function totalStaked() external view returns (uint256) {
+        return _totalStaked;
+    }
+
+    /**
+     * @notice Get the staking token address
+     * @return Address of the staking token
+     */
+    function stakingToken() external view override returns (address) {
+        return address(_stakingToken);
     }
 
     function balanceOf(address account) external view returns (uint256) {
-        return _balances[account];
+        return stakedBalance[account];
     }
 
+    /**
+     * @notice Get the last time rewards are applicable
+     * @return Timestamp of last applicable reward time
+     */
     function lastTimeRewardApplicable() public view returns (uint256) {
         return block.timestamp < periodFinish ? block.timestamp : periodFinish;
     }
 
+    /**
+     * @notice Get available reward balance in contract
+     * @return Available rewards (total balance minus staked amount)
+     */
     function getAvailableRewardBalance() external view returns (uint256) {
         uint256 totalBalance = _stakingToken.balanceOf(address(this));
-        return totalBalance > _totalSupply ? totalBalance - _totalSupply : 0;
+        return totalBalance > _totalStaked ? totalBalance - _totalStaked : 0;
+    }
+
+    /**
+     * @notice Get comprehensive stake information for an account
+     * @param account Address to query
+     * @return APR-specific stake information
+     */
+    function getStakeInfo(address account) external view returns (AprStakeInfo memory) {
+        UnstakeInfo memory request = unstakingRequest[account];
+        return AprStakeInfo({
+            stakedAmount: stakedBalance[account],
+            earnedRewards: earned(account),
+            rewardPerTokenPaid: userRewardPerTokenPaid[account],
+            unstakeAmount: request.amount,
+            unlockTime: request.unlockTime
+        });
     }
 
     /**
      * @notice Calculates cumulative rewards per token. applying the APR cap.
      * @dev This is the core logic change. It determines the effective reward rate by comparing the owner-set rate with the rate required to meet the APR cap.
+     * @return Reward per token stored value
      */
     function rewardPerToken() public view returns (uint256) {
-        if (_totalSupply == 0) {
+        if (_totalStaked == 0) {
             return rewardPerTokenStored;
         }
 
         uint256 effectiveRewardRate = rewardRate;
         if (maxAprInBps > 0) {
-            uint256 cappedRate = (_totalSupply * maxAprInBps) / SECONDS_IN_YEAR / BPS_DIVISOR;
+            uint256 cappedRate = (_totalStaked * maxAprInBps) / SECONDS_IN_YEAR / BPS_DIVISOR;
 
             if (cappedRate < effectiveRewardRate) {
                 effectiveRewardRate = cappedRate;
@@ -145,67 +181,95 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
         }
 
         return rewardPerTokenStored
-            + ((lastTimeRewardApplicable() - lastUpdateTime) * effectiveRewardRate * 1e18) / _totalSupply;
+            + ((lastTimeRewardApplicable() - lastUpdateTime) * effectiveRewardRate * 1e18) / _totalStaked;
     }
 
+    /**
+     * @notice Calculate pending rewards for a staker
+     * @param staker Address of the staker
+     * @return Pending reward amount
+     */
+    function calculateReward(address staker) external view override returns (uint256) {
+        return earned(staker);
+    }
+
+    /**
+     * @notice Calculate earned rewards for an account
+     * @param account Address to check
+     * @return Earned rewards
+     */
     function earned(address account) public view returns (uint256) {
-        return (_balances[account] * (rewardPerToken() - userRewardPerTokenPaid[account])) / 1e18 + rewards[account];
+        return (stakedBalance[account] * (rewardPerToken() - userRewardPerTokenPaid[account])) / 1e18 + rewards[account];
+    }
+
+    function getUnstakedRequest(address account) external view returns (uint256 amount, uint256 unlockTime) {
+        UnstakeInfo storage request = unstakingRequest[account];
+        return (request.amount, request.unlockTime);
     }
 
     // -- External Functions --
 
+    /**
+     * @notice Stake tokens
+     * @param amount Amount of tokens to stake
+     */
     function stake(uint256 amount) external nonReentrant updateReward(msg.sender) {
         require(amount > 0, "Staking: Cannot stake 0 tokens");
         unchecked {
-            _totalSupply = _totalSupply + amount;
-            _balances[msg.sender] = _balances[msg.sender] + amount;
+            _totalStaked += amount;
+            stakedBalance[msg.sender] += amount;
         }
         require(_stakingToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
         emit Staked(msg.sender, amount);
+    }
+
+    /**
+     * @notice Initiate unstaking process with time-lock
+     * @param amount Amount of tokens to unstake
+     */
+    function unstake(uint256 amount) public nonReentrant updateReward(msg.sender) {
+        require(amount > 0, "Staking: Cannot unstake 0 tokens");
+        require(stakedBalance[msg.sender] >= amount, "Staking: Insufficient balance");
+        require(unstakingRequest[msg.sender].amount == 0, "Staking: Unstake request already in progress");
+
+        _totalStaked -= amount;
+        stakedBalance[msg.sender] -= amount;
+
+        uint256 unlockTime = block.timestamp + unstakePeriod;
+        unstakingRequest[msg.sender] = UnstakeInfo({amount: amount, unlockTime: unlockTime});
+
+        emit UnstakeInitiated(msg.sender, amount, unlockTime);
+        emit Unstaked(msg.sender, amount);
     }
 
     function claimRewards() public nonReentrant updateReward(msg.sender) {
         uint256 reward = rewards[msg.sender];
         if (reward > 0) {
             rewards[msg.sender] = 0;
-            _stakingToken.transfer(msg.sender, reward);
+            require(_stakingToken.transfer(msg.sender, reward), "Reward transfer failed");
             emit RewardClaimed(msg.sender, reward);
         }
     }
 
-    function initiateUnstake(uint256 amount) public nonReentrant updateReward(msg.sender) {
-        require(amount > 0, "Staking: Cannot unstake 0 tokens");
-        require(_balances[msg.sender] >= amount, "Staking: Insufficient balance");
-        require(unstakingRequests[msg.sender].amount == 0, "Staking: Unstake request already in progress");
-
-        _totalSupply = _totalSupply - amount;
-        _balances[msg.sender] = _balances[msg.sender] - amount;
-
-        uint256 unlockTime = block.timestamp + unstakePeriod;
-        unstakingRequests[msg.sender] = UnstakeInfo({amount: amount, unlockTime: unlockTime});
-
-        emit UnstakeInitiated(msg.sender, amount, unlockTime);
-    }
-
     function withdraw() external nonReentrant {
-        UnstakeInfo storage request = unstakingRequests[msg.sender];
+        UnstakeInfo storage request = unstakingRequest[msg.sender];
         require(request.amount > 0, "Withdraw: No unstake request found");
         require(block.timestamp >= request.unlockTime, "Withdraw: Unstake period not yet over");
 
         uint256 amountToWithdraw = request.amount;
 
-        delete unstakingRequests[msg.sender];
+        delete unstakingRequest[msg.sender];
 
-        _stakingToken.transfer(msg.sender, amountToWithdraw);
+        require(_stakingToken.transfer(msg.sender, amountToWithdraw), "Transfer failed");
         emit Withdrawn(msg.sender, amountToWithdraw);
     }
 
     function exit() external {
         claimRewards();
 
-        uint256 balance = _balances[msg.sender];
+        uint256 balance = stakedBalance[msg.sender];
         if (balance > 0) {
-            initiateUnstake(balance);
+            unstake(balance);
         }
     }
 
@@ -223,7 +287,7 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
 
         uint256 balanceBefore = _stakingToken.balanceOf(address(this));
 
-        _stakingToken.transferFrom(msg.sender, address(this), reward);
+        require(_stakingToken.transferFrom(msg.sender, address(this), reward), "Transfer Failed");
 
         uint256 balanceAfter = _stakingToken.balanceOf(address(this));
         require(balanceAfter >= balanceBefore + reward, "Token transfer failed or insufficient balance");
@@ -260,4 +324,12 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
         unstakePeriod = _newPeriod;
         emit UnstakePeriodUpdated(_newPeriod);
     }
+
+    /**
+     * @notice Authorize upgrade (only owner)
+     * @param newImplementation Address of the new implementation
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    uint256[50] private __gap;
 }
