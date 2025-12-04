@@ -9,10 +9,10 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {IStakingContract} from "./interfaces/IStakingContract.sol";
 
 contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSUpgradeable, IStakingContract {
-    IERC20 private stakingToken;
+    IERC20 private _stakingToken;
 
     mapping(address => uint256) public stakedBalance;
-    uint256 private totalStaked;
+    uint256 private _totalStaked;
 
     //Manage Unstaking Request
     struct UnstakeInfo {
@@ -35,34 +35,34 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
 
     /**
      * @dev Initializer sets the address of the Governance Token
-     * @param _tokenAddress The address to deploy stakingToken contract
+     * @param _tokenAddress The address to deploy _stakingToken contract
      * @param _initialOwner The address that will own the contract
      */
     function initialize(address _tokenAddress, address _initialOwner) public initializer {
         require(_tokenAddress != address(0), "The Token address cannot be zero");
         require(_initialOwner != address(0), "The Owner cannot be zero");
         __Ownable_init(_initialOwner);
-        stakingToken = IERC20(_tokenAddress);
+        _stakingToken = IERC20(_tokenAddress);
     }
 
     // Staking
 
     /**
-     * @notice Stakes a specified amount of stakingToken.
+     * @notice Stakes a specified amount of _stakingToken.
      * @dev User must first approve this contract to spend their tokens.
      * @param amount The amount of tokens to stake.
      */
     function stake(uint256 amount) external nonReentrant {
         require(amount > 0, "Cannot stake zero Tokens");
-        require(stakingToken.balanceOf(msg.sender) >= amount, "Insufficient Balance");
-        require(stakingToken.allowance(msg.sender, address(this)) >= amount, "Insufficient Allowance");
+        require(_stakingToken.balanceOf(msg.sender) >= amount, "Insufficient Balance");
+        require(_stakingToken.allowance(msg.sender, address(this)) >= amount, "Insufficient Allowance");
 
         // Transfer Tokens from user to the contract
-        require(stakingToken.transferFrom(msg.sender, address(this), amount), "Transfer Failed");
+        require(_stakingToken.transferFrom(msg.sender, address(this), amount), "Transfer Failed");
 
         // Updating Staking Records
         stakedBalance[msg.sender] = stakedBalance[msg.sender] + amount;
-        totalStaked = totalStaked + amount;
+        _totalStaked = _totalStaked + amount;
 
         emit Staked(msg.sender, amount);
     }
@@ -81,7 +81,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
 
         // Updating Staking Records
         stakedBalance[msg.sender] -= amount;
-        totalStaked -= amount;
+        _totalStaked -= amount;
 
         // Recoring Unstaking
         uint256 unlockTime = block.timestamp + UNSTAKE_PERIOD;
@@ -107,7 +107,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
         request.unlockTime = 0;
 
         // Transfer
-        require(stakingToken.transfer(msg.sender, amountToWithdraw), "Token Transfer Failed during UnStaking Process");
+        require(_stakingToken.transfer(msg.sender, amountToWithdraw), "Token Transfer Failed during UnStaking Process");
 
         emit Withdraw(msg.sender, amountToWithdraw);
     }
