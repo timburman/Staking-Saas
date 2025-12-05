@@ -180,8 +180,8 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
             }
         }
 
-        return rewardPerTokenStored
-            + ((lastTimeRewardApplicable() - lastUpdateTime) * effectiveRewardRate * 1e18) / _totalStaked;
+        return rewardPerTokenStored + ((lastTimeRewardApplicable() - lastUpdateTime) * effectiveRewardRate * 1e18)
+            / _totalStaked;
     }
 
     /**
