@@ -64,12 +64,7 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
 
     // -- Modifiers --
     modifier updateReward(address account) {
-        rewardPerTokenStored = rewardPerToken();
-        lastUpdateTime = lastTimeRewardApplicable();
-        if (account != address(0)) {
-            rewards[account] = earned(account);
-            userRewardPerTokenPaid[account] = rewardPerTokenStored;
-        }
+        _updateReward(account);
         _;
     }
 
@@ -325,11 +320,20 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
         emit UnstakePeriodUpdated(_newPeriod);
     }
 
+    function _updateReward(address account) internal {
+        lastUpdateTime = lastTimeRewardApplicable();
+        if (account != address(0)) {
+            rewards[account] = earned(account);
+            userRewardPerTokenPaid[account] = rewardPerTokenStored;
+        }
+        rewardPerTokenStored = rewardPerToken();
+    }
+
     /**
      * @notice Authorize upgrade (only owner)
      * @param newImplementation Address of the new implementation
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }
