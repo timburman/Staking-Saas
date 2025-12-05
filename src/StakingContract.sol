@@ -6,12 +6,13 @@ import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/Reentrancy
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {IStakingContract} from "./interfaces/IStakingContract.sol";
 
-contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSUpgradeable {
-    IERC20 public governanceToken;
+contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSUpgradeable, IStakingContract {
+    IERC20 private _stakingToken;
 
     mapping(address => uint256) public stakedBalance;
-    uint256 public totalStaked;
+    uint256 private _totalStaked;
 
     //Manage Unstaking Request
     struct UnstakeInfo {
@@ -25,7 +26,6 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
     uint256 public constant UNSTAKE_PERIOD = 7 days;
 
     // Events
-    event Staked(address indexed user, uint256 amount);
     event UnstakeInitiated(address indexed user, uint256 amount, uint256 unlockTime);
     event Withdraw(address indexed user, uint256 amount);
 
@@ -35,36 +35,36 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
 
     /**
      * @dev Initializer sets the address of the Governance Token
-     * @param _tokenAddress The address to deploy GovernanceToken contract
+     * @param _tokenAddress The address to deploy _stakingToken contract
      * @param _initialOwner The address that will own the contract
      */
     function initialize(address _tokenAddress, address _initialOwner) public initializer {
         require(_tokenAddress != address(0), "The Token address cannot be zero");
         require(_initialOwner != address(0), "The Owner cannot be zero");
         __Ownable_init(_initialOwner);
-        governanceToken = IERC20(_tokenAddress);
+        _stakingToken = IERC20(_tokenAddress);
     }
 
     // Staking
 
     /**
-     * @notice Stakes a specified amount of GovernanceToken.
+     * @notice Stakes a specified amount of _stakingToken.
      * @dev User must first approve this contract to spend their tokens.
-     * @param _amount The amount of tokens to stake.
+     * @param amount The amount of tokens to stake.
      */
-    function stake(uint256 _amount) external nonReentrant {
-        require(_amount > 0, "Cannot stake zero Tokens");
-        require(governanceToken.balanceOf(msg.sender) >= _amount, "Insufficient Balance");
+    function stake(uint256 amount) external nonReentrant {
+        require(amount > 0, "Cannot stake zero Tokens");
+        require(_stakingToken.balanceOf(msg.sender) >= amount, "Insufficient Balance");
+        require(_stakingToken.allowance(msg.sender, address(this)) >= amount, "Insufficient Allowance");
 
         // Transfer Tokens from user to the contract
-        bool success = governanceToken.transferFrom(msg.sender, address(this), _amount);
-        require(success, "Transfer Failed");
+        require(_stakingToken.transferFrom(msg.sender, address(this), amount), "Transfer Failed");
 
         // Updating Staking Records
-        stakedBalance[msg.sender] = stakedBalance[msg.sender] + _amount;
-        totalStaked = totalStaked + _amount;
+        stakedBalance[msg.sender] = stakedBalance[msg.sender] + amount;
+        _totalStaked = _totalStaked + amount;
 
-        emit Staked(msg.sender, _amount);
+        emit Staked(msg.sender, amount);
     }
 
     // UnStaking
@@ -72,22 +72,23 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
     /**
      * @notice Initiates the unstaking process for a specified amount.
      * @dev Tokens remain locked for UNSTAKE_PERIOD. Only one unstake request active at a time per user.
-     * @param _amount The amount of tokens to start unstaking.
+     * @param amount The amount of tokens to start unstaking.
      */
-    function initiateUnstaking(uint256 _amount) external nonReentrant {
-        require(_amount > 0, "Cannot Unstake zero tokens");
-        require(stakedBalance[msg.sender] >= _amount, "Insufficient staked balance");
+    function unstake(uint256 amount) external nonReentrant {
+        require(amount > 0, "Cannot Unstake zero tokens");
+        require(stakedBalance[msg.sender] >= amount, "Insufficient staked balance");
         require(unstakingRequest[msg.sender].amount == 0, "Unstake Already in Process");
 
         // Updating Staking Records
-        stakedBalance[msg.sender] = stakedBalance[msg.sender] - _amount;
-        totalStaked = totalStaked - _amount;
+        stakedBalance[msg.sender] -= amount;
+        _totalStaked -= amount;
 
         // Recoring Unstaking
         uint256 unlockTime = block.timestamp + UNSTAKE_PERIOD;
-        unstakingRequest[msg.sender] = UnstakeInfo({amount: _amount, unlockTime: unlockTime});
+        unstakingRequest[msg.sender] = UnstakeInfo({amount: amount, unlockTime: unlockTime});
 
-        emit UnstakeInitiated(msg.sender, _amount, unlockTime);
+        emit UnstakeInitiated(msg.sender, amount, unlockTime);
+        emit Unstaked(msg.sender, amount);
     }
 
     /**
@@ -106,8 +107,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
         request.unlockTime = 0;
 
         // Transfer
-        bool success = governanceToken.transfer(msg.sender, amountToWithdraw);
-        require(success, "Token Transfer Failed during UnStaking Process");
+        require(_stakingToken.transfer(msg.sender, amountToWithdraw), "Token Transfer Failed during UnStaking Process");
 
         emit Withdraw(msg.sender, amountToWithdraw);
     }
@@ -132,6 +132,32 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
     function getUnstakedRequest(address _account) external view returns (uint256 amount, uint256 unlockTime) {
         UnstakeInfo storage request = unstakingRequest[_account];
         return (request.amount, request.unlockTime);
+    }
+
+    /**
+     * @notice Calculate pending rewards (returns 0 for base staking)
+     * @param staker Address of the staker
+     * @return Pending reward amount (always 0)
+     */
+    function calculateReward(address staker) external pure override returns (uint256) {
+        staker; // Silence unused parameter warning
+        return 0;
+    }
+
+    /**
+     * @notice Get total amount staked in the contract
+     * @return Total staked amount
+     */
+    function totalStaked() external view override returns (uint256) {
+        return _totalStaked;
+    }
+
+    /**
+     * @notice Get the staking token address
+     * @return Address of the staking token
+     */
+    function stakingToken() external view override returns (address) {
+        return address(_stakingToken);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}

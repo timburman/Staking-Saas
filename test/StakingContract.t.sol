@@ -57,7 +57,7 @@ contract StakingContractTest is Test {
         vm.startPrank(user1);
         stakingContract.stake(500 ether);
 
-        stakingContract.initiateUnstaking(200 ether);
+        stakingContract.unstake(200 ether);
         vm.stopPrank();
 
         assertEq(stakingContract.stakedBalance(user1), 300 ether);
@@ -71,7 +71,7 @@ contract StakingContractTest is Test {
         vm.startPrank(user1);
         stakingContract.stake(500 ether);
 
-        stakingContract.initiateUnstaking(300 ether);
+        stakingContract.unstake(300 ether);
 
         skip(7 days);
         stakingContract.withdraw();
@@ -85,7 +85,7 @@ contract StakingContractTest is Test {
     function testCannotUnStakeZero() public {
         vm.prank(user1);
         vm.expectRevert("Cannot Unstake zero tokens");
-        stakingContract.initiateUnstaking(0);
+        stakingContract.unstake(0);
     }
 
     function testCannotUnStakeMoreThanStaked() public {
@@ -93,7 +93,7 @@ contract StakingContractTest is Test {
         stakingContract.stake(500 ether);
 
         vm.expectRevert("Insufficient staked balance");
-        stakingContract.initiateUnstaking(600 ether);
+        stakingContract.unstake(600 ether);
         vm.stopPrank();
     }
 
@@ -101,7 +101,7 @@ contract StakingContractTest is Test {
         vm.startPrank(user1);
         stakingContract.stake(500 ether);
 
-        stakingContract.initiateUnstaking(300 ether);
+        stakingContract.unstake(300 ether);
 
         vm.expectRevert("Unstake period not over");
         stakingContract.withdraw();

@@ -42,7 +42,7 @@ interface IStakingContract {
 
     /**
      * @notice Get stake information for a specific address
-     * @param user Address of the user
+     * @param staker Address of the user
      * @return Stake Information
      */
     function calculateReward(address staker) external view returns (uint256);
