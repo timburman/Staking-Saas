@@ -321,12 +321,12 @@ contract APRStakingContract is Initializable, OwnableUpgradeable, ReentrancyGuar
     }
 
     function _updateReward(address account) internal {
+        rewardPerTokenStored = rewardPerToken();
         lastUpdateTime = lastTimeRewardApplicable();
         if (account != address(0)) {
             rewards[account] = earned(account);
             userRewardPerTokenPaid[account] = rewardPerTokenStored;
         }
-        rewardPerTokenStored = rewardPerToken();
     }
 
     /**
