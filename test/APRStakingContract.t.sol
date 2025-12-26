@@ -216,7 +216,7 @@ contract APRStakingContractTest is Test {
         skip(1 days);
 
         vm.startPrank(user1);
-        vm.expectEmit(true, false, false, true);
+        vm.expectEmit();
         emit RewardClaimed(user1, stakingContract.earned(user1));
         stakingContract.claimRewards();
         vm.stopPrank();
