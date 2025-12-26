@@ -162,5 +162,5 @@ contract StakingContract is Initializable, OwnableUpgradeable, ReentrancyGuard, 
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }
