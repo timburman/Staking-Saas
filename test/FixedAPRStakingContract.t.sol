@@ -40,6 +40,15 @@ contract FixedAPRStakingContractTest is Test {
     event RewardPoolFunded(uint256 amount);
     event RewardsAddedToPool(address indexed user, uint256 amount, uint256 totalPoolAmount);
     event CompoundPoolFlushed(address indexed user, uint256 amount, uint256 newStakeIndex, uint8 periodIndex);
+    event StakedWithPeriod(
+        address indexed user,
+        uint256 amount,
+        uint256 aprInBps,
+        uint256 stakeIndex,
+        uint256 unlockTime,
+        uint8 periodIndex,
+        bool autoCompound
+    );
 
     function setUp() public {
         // Setup accounts
@@ -53,9 +62,8 @@ contract FixedAPRStakingContractTest is Test {
         vm.startPrank(owner);
         stakingToken = new ERC20Mock();
         FixedAPRStakingContract stakingContractInstance = new FixedAPRStakingContract();
-        bytes memory initData = abi.encodeWithSignature(
-            "initialize(address,uint256,address)", address(stakingToken), BASE_APR_365, owner
-        );
+        bytes memory initData =
+            abi.encodeWithSignature("initialize(address,uint256,address)", address(stakingToken), BASE_APR_365, owner);
         ERC1967Proxy proxyStakingContract = new ERC1967Proxy(address(stakingContractInstance), initData);
         stakingContract = FixedAPRStakingContract(address(proxyStakingContract));
         vm.stopPrank();
@@ -74,9 +82,7 @@ contract FixedAPRStakingContractTest is Test {
         vm.stopPrank();
     }
 
-    // ==========================================
-    // 🧪 BASIC FUNCTIONALITY TESTS
-    // ==========================================
+    // BASIC FUNCTIONALITY TESTS
 
     function testConstructorInitialization() public view {
         assertEq(address(stakingContract.stakingToken()), address(stakingToken));
@@ -106,8 +112,10 @@ contract FixedAPRStakingContractTest is Test {
         stakingToken.approve(address(stakingContract), stakeAmount);
 
         // Expect Staked event
-        vm.expectEmit(true, true, true, true);
-        emit Staked(user1, stakeAmount, (BASE_APR_365 * 84) / 365, 0, block.timestamp + 84 days, periodIndex, false);
+        vm.expectEmit();
+        emit StakedWithPeriod(
+            user1, stakeAmount, (BASE_APR_365 * 84) / 365, 0, block.timestamp + 84 days, periodIndex, false
+        );
 
         stakingContract.stakeWithPeriod(stakeAmount, periodIndex, false);
         vm.stopPrank();
@@ -218,9 +226,7 @@ contract FixedAPRStakingContractTest is Test {
         assertFalse(finalInfo.canWithdraw);
     }
 
-    // ==========================================
-    // 🔥 COMPOUND POOL FUNCTIONALITY TESTS
-    // ==========================================
+    // COMPOUND POOL FUNCTIONALITY TESTS
 
     function testClaimRewardsWithAutoCompoundCreatesPool() public {
         uint256 stakeAmount = 1000 ether;
@@ -440,9 +446,7 @@ contract FixedAPRStakingContractTest is Test {
         }
     }
 
-    // ==========================================
-    // 🛡️ SECURITY & ACCESS CONTROL TESTS
-    // ==========================================
+    // SECURITY & ACCESS CONTROL TESTS
 
     function testOnlyOwnerCanSetBaseApr() public {
         uint256 newApr = 1500; // 15%
@@ -467,8 +471,8 @@ contract FixedAPRStakingContractTest is Test {
         uint256 additionalFunding = 50_000 ether;
 
         // Give attacker some tokens
-        vm.prank(owner);
-        require(stakingToken.transfer(attacker, additionalFunding), "Transfer Failed");
+        stakingToken.mint(attacker, additionalFunding);
+        stakingToken.mint(owner, additionalFunding);
 
         // Non-owner should fail even with tokens
         vm.startPrank(attacker);
@@ -586,9 +590,7 @@ contract FixedAPRStakingContractTest is Test {
         stakingContract.withdraw(0);
     }
 
-    // ==========================================
-    // 🔍 VIEW FUNCTION TESTS
-    // ==========================================
+    // VIEW FUNCTION TESTS
 
     function testViewFunctionsReturnCorrectData() public {
         // Test initial state
@@ -725,9 +727,7 @@ contract FixedAPRStakingContractTest is Test {
         assertApproxEqAbs(expectedReward, manualCalc, 1e15); // Allow small precision difference
     }
 
-    // ==========================================
-    // 🎯 EDGE CASES & COMPREHENSIVE TESTING
-    // ==========================================
+    // EDGE CASES & COMPREHENSIVE TESTING
 
     function testMultipleUsersWithCompoundPools() public {
         // User1 creates compound pool
@@ -830,9 +830,7 @@ contract FixedAPRStakingContractTest is Test {
         }
     }
 
-    // ==========================================
-    // 🛠️ HELPER FUNCTIONS FOR TESTING
-    // ==========================================
+    // HELPER FUNCTIONS FOR TESTING
 
     function _createCompoundPoolWithRewards(address user, uint256 targetPoolAmount, uint8 preferredPeriod) internal {
         // Calculate stake amount needed to generate target rewards
