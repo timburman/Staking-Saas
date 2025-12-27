@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -103,6 +103,8 @@ contract FixedAPRStakingContract is
     event AutoCompoundToggled(address indexed user, uint256 stakeIndex, bool enabled);
     event RewardPoolFunded(uint256 amount);
     event ExcessFundsWithdrawn(uint256 amount);
+    event RewardPoolStatusChanged(bool fundsAvailable);
+    event CompoundPoolThresholdReached(address indexed user, uint256 amount);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -700,7 +702,7 @@ contract FixedAPRStakingContract is
     /**
      * @notice Get user's stake count
      */
-    function getTotalStakedStaked(address user) public view returns (uint256) {
+    function getTotalStaked(address user) public view returns (uint256) {
         uint256 total = 0;
         UserStake[] storage stakes = userStakes[user];
 
@@ -889,7 +891,7 @@ contract FixedAPRStakingContract is
      * @return Total balance across all stakes and compound pool
      */
     function getTotalUserBalance(address user) external view returns (uint256) {
-        uint256 totalUserStaked = getTotalStakedStaked(user);
+        uint256 totalUserStaked = getTotalStaked(user);
         uint256 totalPending = getTotalExpectedRewards(user);
         uint256 compoundPool = userCompoundPools[user].totalAmount;
 
@@ -919,6 +921,16 @@ contract FixedAPRStakingContract is
      */
     function stakingToken() external view override returns (address) {
         return address(_stakingToken);
+    }
+
+    /**
+     * @notice Calculate current APR for a stake
+     * @param stakeIndex Index of the stake
+     * @return Current APR in basis points(bps)
+     */
+    function getCurrentApr(address user, uint256 stakeIndex) external view returns (uint256) {
+        require(stakeIndex < userStakes[user].length, "Invalid stake index");
+        return userStakes[user][stakeIndex].aprInBps;
     }
 
     /**
